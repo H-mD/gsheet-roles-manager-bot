@@ -115,21 +115,116 @@ async def batchRole(ctx, role_name=None, sheet_url=None, sheet_number: int=None,
                 for i, data in enumerate(data_range):
                     sleep(1)
                     if data.value == "":
+                        await ctx.send(f"***Done***")
                         break
                     if data.value == header:
                         continue
 
+                    # filter member
                     if angkatan_range[i].value == "2021":
                         worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
-                        await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Angkatan 2021*")
+                        # await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Angkatan 2021*")
                         continue
                     elif angkatan_range[i].value == "2020":
                         worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
-                        await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Angkatan 2020*")
+                        # await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Angkatan 2020*")
                         continue
-
                     if worksheet.cell(data_header.row+1+i, status_header.col).value == "v":
                         # await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Already Added*")
+                        continue
+                    
+                    # find member name
+                    member_name = data.value.split("#")[0] # remove discriminator
+                    member_name = member_name.lstrip("@") # remove @
+                    member_name = member_name.rstrip() # remove trailing space
+                    member = discord.utils.get(guild.members, name=member_name) # search username
+                    if member is None:
+                        member = discord.utils.get(guild.members, nick=member_name) # search nickname
+                        if member is None:
+                            member_name = switch_case(member_name) # try switch case
+                            member = discord.utils.get(guild.members, name=member_name) # search username
+                            if member is None:
+                                member = discord.utils.get(guild.members, nick=member_name) # search nickname
+                                if member is None:
+                                    worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
+                                    # await ctx.send(f"({data_len}/{i+1})  Skipping **[{member_name}]**, Reason: *Member not found*")
+                                    continue
+                    # add role
+                    await member.add_roles(role)
+                    await ctx.send(f"({data_len}/{i+1})  Added *{role_name}* to **[{member}]**")
+                    worksheet.update_cell(data_header.row+1+i, status_header.col, "v")
+
+        except discord.Forbidden:
+            await ctx.send(f"I don't have permission to do that.")
+        except discord.HTTPException:
+            await ctx.send(f"Failed to add role. An error occurred.")
+        except gspread.exceptions.SpreadsheetNotFound:
+            await ctx.send(f"Spreadsheet not found")
+
+@bot.command()
+async def batchFix(ctx, role_name=None, sheet_url=None, sheet_number: int=None, header=None):
+    guild = ctx.guild
+    role = discord.utils.get(guild.roles, name=role_name)
+
+    embed = discord.Embed(title="Fixing Role")
+    embed.description = f"Processing ..."
+
+    msg = await ctx.send(embed=embed)
+    
+    if role_name is None:
+        embed.description = (f"command format: **;batchFix <role_name> <sheet_url> <sheet_number> <header>**")
+        await msg.edit(embed=embed)
+    elif sheet_url is None:
+        embed.description = (f"command format: **;batchFix <role_name> <sheet_url> <sheet_number> <header>**")
+        await msg.edit(embed=embed)
+    elif sheet_number is None:
+        embed.description = (f"command format: **;batchFix <role_name> <sheet_url> <sheet_number> <header>**")
+        await msg.edit(embed=embed)
+    elif header is None:
+        embed.description = (f"command format: **;batchFix <role_name> <sheet_url> <sheet_number> <header>**")
+        await msg.edit(embed=embed)
+    elif role.guild != ctx.guild:
+        embed.description = (f"ERROR\nRole **[{role_name}]** not found in this server.")
+        await msg.edit(embed=embed)
+    else:
+        try:
+            sheet = client.open_by_url(sheet_url)
+            worksheet = sheet.get_worksheet(sheet_number)
+
+            data_header = worksheet.find(header)
+            status_header = worksheet.find("status")
+            angkatan_header = worksheet.find("angkatan")
+
+            if data_header is None:
+                await ctx.send(f"header **[{header}]** not found")
+            else:
+                data_range = worksheet.range(data_header.row + 1, data_header.col, worksheet.row_count, data_header.col)
+                angkatan_range = worksheet.range(angkatan_header.row + 1, angkatan_header.col, worksheet.row_count, angkatan_header.col)
+                status_range = worksheet.range(status_header.row + 1, status_header.col, worksheet.row_count, status_header.col)
+                data_len = 0
+                for i in status_range:
+                    if i.value == "":
+                        break
+                    data_len += 1
+
+                for i, data in enumerate(data_range):
+                    sleep(1)
+                    if data.value == header:
+                        continue
+
+                    if i+1 > data_len:
+                        embed.description += (f"\n**DONE**")
+                        await msg.edit(embed=embed)
+                        break
+
+                    embed.description = (f"Progress: **{data_len}/{i+1}**")
+                    await msg.edit(embed=embed)
+
+                    if angkatan_range[i].value == "2021":
+                        worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
+                        continue
+                    elif angkatan_range[i].value == "2020":
+                        worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
                         continue
                     
                     # find member name
@@ -146,18 +241,21 @@ async def batchRole(ctx, role_name=None, sheet_url=None, sheet_number: int=None,
                                 member = discord.utils.get(guild.members, nick=member_name) # search nickname
                                 if member is None:
                                     worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
-                                    await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Member not found*")
                                     continue
                     
-                    await member.add_roles(role)
-                    await ctx.send(f"({data_len}/{i+1})  Added *{role_name}* to **[{member}]**")
+                    # check member role
+                    if role not in member.roles:
+                        await member.add_roles(role)
                     worksheet.update_cell(data_header.row+1+i, status_header.col, "v")
-                await ctx.send(f"***Done***")
+
         except discord.Forbidden:
-            await ctx.send(f"I don't have permission to do that.")
+            embed.description = (f"ERROR\nI don't have permission to do that.")
+            await msg.edit(embed=embed)
         except discord.HTTPException:
-            await ctx.send(f"Failed to add role. An error occurred.")
+            embed.description = (f"ERROR\nFailed to add role. An error occurred.")
+            await msg.edit(embed=embed)
         except gspread.exceptions.SpreadsheetNotFound:
-            await ctx.send(f"Spreadsheet not found")
+            embed.description = (f"ERROR\nSpreadsheet not found")
+            await msg.edit(embed=embed)
 
 bot.run(TOKEN)
