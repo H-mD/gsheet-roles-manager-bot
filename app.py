@@ -5,6 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from time import sleep
 from dotenv import load_dotenv
 import os
+import asyncio
 
 load_dotenv()
 
@@ -15,6 +16,7 @@ intents.message_content = True
 intents.members = True
 intents.guilds = True
 bot = commands.Bot(command_prefix=';', intents=intents)
+version = "1.0.1"
 
 # GSheet
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -28,8 +30,33 @@ def switch_case(string):
         return string[0].lower() + string[1:]
     else:
         return string
+    
+def find_member(guild, name):
+    member_name = name.split("#")[0] # remove discriminator
+    member_name = member_name.lstrip("@") # remove @
+    member_name = member_name.rstrip() # remove trailing space
+    member = discord.utils.get(guild.members, name=member_name) # search username
+    if member is None:
+        member = discord.utils.get(guild.members, nick=member_name) # search nickname
+        if member is None:
+            member_name = switch_case(member_name) # try switch case
+            member = discord.utils.get(guild.members, name=member_name) # search username
+            if member is None:
+                member = discord.utils.get(guild.members, nick=member_name) # search nickname
+                
+    return member
+
+async def my_background_task(interval):
+    await client.wait_until_ready()
+    while not client.is_closed():
+        
+        await asyncio.sleep(interval)
 
 # Bot Commands
+@bot.command()
+async def version(ctx):
+    await ctx.send(version)
+
 @bot.command()
 async def removeRole(ctx, member_name, role_name):
     guild = ctx.guild
@@ -129,29 +156,20 @@ async def batchRole(ctx, role_name=None, sheet_url=None, sheet_number: int=None,
                         worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
                         # await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Angkatan 2020*")
                         continue
-                    if worksheet.cell(data_header.row+1+i, status_header.col).value == "v":
+                    # if worksheet.cell(data_header.row+1+i, status_header.col).value == "v":
                         # await ctx.send(f"({data_len}/{i+1})  Skipping **[{data.value}]**, Reason: *Already Added*")
-                        continue
+                        # continue
                     
                     # find member name
-                    member_name = data.value.split("#")[0] # remove discriminator
-                    member_name = member_name.lstrip("@") # remove @
-                    member_name = member_name.rstrip() # remove trailing space
-                    member = discord.utils.get(guild.members, name=member_name) # search username
+                    member = find_member(guild, data.value)
                     if member is None:
-                        member = discord.utils.get(guild.members, nick=member_name) # search nickname
-                        if member is None:
-                            member_name = switch_case(member_name) # try switch case
-                            member = discord.utils.get(guild.members, name=member_name) # search username
-                            if member is None:
-                                member = discord.utils.get(guild.members, nick=member_name) # search nickname
-                                if member is None:
-                                    worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
-                                    # await ctx.send(f"({data_len}/{i+1})  Skipping **[{member_name}]**, Reason: *Member not found*")
-                                    continue
+                        worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
+                        # await ctx.send(f"({data_len}/{i+1})  Skipping **[{member_name}]**, Reason: *Member not found*")
+                        continue
                     # add role
-                    await member.add_roles(role)
-                    await ctx.send(f"({data_len}/{i+1})  Added *{role_name}* to **[{member}]**")
+                    if role not in member.roles:
+                        await member.add_roles(role)
+                        await ctx.send(f"({data_len}/{i+1})  Added *{role_name}* to **[{member}]**")
                     worksheet.update_cell(data_header.row+1+i, status_header.col, "v")
 
         except discord.Forbidden:
@@ -228,20 +246,10 @@ async def batchFix(ctx, role_name=None, sheet_url=None, sheet_number: int=None, 
                         continue
                     
                     # find member name
-                    member_name = data.value.split("#")[0] # remove discriminator
-                    member_name = member_name.lstrip("@") # remove @
-
-                    member = discord.utils.get(guild.members, name=member_name) # search username
+                    member = find_member(guild, data.value)
                     if member is None:
-                        member = discord.utils.get(guild.members, nick=member_name) # search nickname
-                        if member is None:
-                            member_name = switch_case(member_name) # try switch case
-                            member = discord.utils.get(guild.members, name=member_name) # search username
-                            if member is None:
-                                member = discord.utils.get(guild.members, nick=member_name) # search nickname
-                                if member is None:
-                                    worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
-                                    continue
+                        worksheet.update_cell(data_header.row+1+i, status_header.col, "x")
+                        continue
                     
                     # check member role
                     if role not in member.roles:
